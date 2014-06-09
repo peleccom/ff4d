@@ -1,4 +1,5 @@
 #!/usr/bin/python
+# -- coding: utf-8 --
 
 # Copyright (c) 2014 Sascha Schmidt <sascha@schmidt.ps> (author)
 # http://blog.schmidt.ps
@@ -19,7 +20,7 @@
 
 from __future__ import with_statement
 
-import os, sys, pwd, errno, json, argparse, urllib, urllib2, httplib
+import os, sys, pwd, errno, json, argparse, urllib, urllib2, httplib, urlparse
 from time import time, mktime, sleep
 from datetime import datetime
 from stat import S_IFDIR, S_IFLNK, S_IFREG
@@ -48,8 +49,7 @@ class Dropbox(Operations):
 
     if mhash != None:
       args.update({'hash' : mhash})
-
-    result = self.ar.get('https://api.dropbox.com/1/metadata/auto' + path, args)
+    result = self.ar.get(self.ar.make_url('https://api.dropbox.com/1/metadata/auto', path), args)
     return result
 
   # Rename a Dropbox file/directory object.
@@ -57,21 +57,21 @@ class Dropbox(Operations):
     args = {'root'      : 'auto', 
             'from_path' : old,
             'to_path'   : new}
-    result = self.ar.post('https://api.dropbox.com/1/fileops/move', args)
+    result = self.ar.post(self.ar.make_url('https://api.dropbox.com/1/fileops/move'), args)
     return result
 
   # Delete a Dropbox file/directory object.
   def dbxFileDelete(self, path):
     args = {'root' : 'auto',
             'path' : path}
-    result = self.ar.post('https://api.dropbox.com/1/fileops/delete', args)
+    result = self.ar.post(self.ar.make_url('https://api.dropbox.com/1/fileops/delete'), args)
     return result
 
   # Create a Dropboy folder.
   def dbxFileCreateFolder(self, path):
     args = {'root' : 'auto',
             'path' : path}
-    result = self.ar.post('https://api.dropbox.com/1/fileops/create_folder', args)
+    result = self.ar.post(self.ar.make_url('https://api.dropbox.com/1/fileops/create_folder'), args)
     return result
 
   # Upload chunk of data to Dropbox.
@@ -82,13 +82,13 @@ class Dropbox(Operations):
     if upload_id != "":
       args.update({'upload_id' : upload_id})
 
-    result = self.ar.post('https://api-content.dropbox.com/1/chunked_upload?' + urllib.urlencode(args), None, None, data)
+    result = self.ar.post(self.ar.make_url('https://api-content.dropbox.com/1/chunked_upload?') + urllib.urlencode(args), None, None, data)
     return result
 
   # Commit chunked upload to Dropbox.
   def dbxCommitChunkedUpload(self, path, upload_id):
     args = {'upload_id' : upload_id}
-    result = self.ar.post('https://api-content.dropbox.com/1/commit_chunked_upload/auto' + path, args)
+    result = self.ar.post(self.ar.make_url('https://api-content.dropbox.com/1/commit_chunked_upload/auto', path), args)
     return result
 
   # Get Dropbox filehandle.
@@ -96,7 +96,7 @@ class Dropbox(Operations):
     seekheader = None
     if seek != False:
       seekheader = {'Range' : 'bytes=' + str(seek)}
-    result = self.ar.get('https://api-content.dropbox.com/1/files/auto' + path, None, seekheader, True)
+    result = self.ar.get(self.ar.make_url('https://api-content.dropbox.com/1/files/auto', path), None, seekheader, True)
     return result
 
 
@@ -192,10 +192,10 @@ class Dropbox(Operations):
     else:
       if debug == True: appLog('debug', 'No cached metadata for: ' + path)
       try:
-        # If the path already exists, this path (file/dir) does not exist.
-        if os.path.dirname(path) in self.cache and 'contents' in self.cache[os.path.dirname(path)]:
-          if debug == True: appLog('debug', 'Basepath exists in cache for: ' + path)
-          return False
+        # # If the path already exists, this path (file/dir) does not exist.
+        # if os.path.dirname(path) in self.cache and 'contents' in self.cache[os.path.dirname(path)]:
+        #   if debug == True: appLog('debug', 'Basepath exists in cache for: ' + path)
+        #   return False
 
         item = self.dbxMetadata(path)
         if 'is_deleted' in item and item['is_deleted'] == True:
@@ -225,7 +225,6 @@ class Dropbox(Operations):
   # Filesystem functions. #
   #########################
   def mkdir(self, path, mode):
-    path = path.encode('utf-8')
     if debug == True: appLog('debug', 'Called: mkdir() - Path: ' + path)
     try:
       self.dbxFileCreateFolder(path)
@@ -239,7 +238,6 @@ class Dropbox(Operations):
 
   # Remove a directory.
   def rmdir(self, path):
-    path = path.encode('utf-8')
     if debug == True: appLog('debug', 'Called: rmdir() - Path: ' + path)
     try:
       self.dbxFileDelete(path)
@@ -255,7 +253,6 @@ class Dropbox(Operations):
 
   # Remove a file.
   def unlink(self, path):
-    path = path.encode('utf-8')
     if debug == True: appLog('debug', 'Called: unlink() - Path: ' + path)
 
     # Remove data from cache.
@@ -273,8 +270,6 @@ class Dropbox(Operations):
 
   # Rename a file or directory.
   def rename(self, old, new):
-    old = old.encode('utf-8')
-    new = new.encode('utf-8')
     if debug == True: appLog('debug', 'Called: rename() - Old: ' + old + ' New: ' + new)
     try:
       self.dbxFileMove(old, new)
@@ -290,7 +285,6 @@ class Dropbox(Operations):
 
   # Read data from a remote filehandle.
   def read(self, path, length, offset, fh):
-    path = path.encode('utf-8')
     # Wait while this function is not threadable.
     while self.openfh[fh]['lock'] == True:
       pass
@@ -328,7 +322,6 @@ class Dropbox(Operations):
 
   # Write data to a filehandle.
   def write(self, path, buf, offset, fh):
-    path = path.encode('utf-8')
     if debug == True: appLog('debug', 'Called: write() - Path: ' + path + ' Offset: ' + str(offset) + ' FH: ' + str(fh))
     try:
       # Check for the beginning of the file.
@@ -362,7 +355,6 @@ class Dropbox(Operations):
 
   # Open a filehandle.
   def open(self, path, flags):
-    path = path.encode('utf-8')
     if debug == True: appLog('debug', 'Called: open() - Path: ' + path + ' Flags: ' + str(flags))
 
     # Validate flags.
@@ -376,7 +368,6 @@ class Dropbox(Operations):
 
   # Create a file.
   def create(self, path, mode):
-    path = path.encode('utf-8')
     if debug == True: appLog('debug', 'Called: create() - Path: ' + path + ' Mode: ' + str(mode))
 
     fh = self.getFH('w')
@@ -390,7 +381,6 @@ class Dropbox(Operations):
 
   # Release (close) a filehandle.
   def release(self, path, fh):
-    path = path.encode('utf-8')
     if debug == True: appLog('debug', 'Called: release() - Path: ' + path + ' FH: ' + str(fh))
 
     # Check to finish Dropbox upload.
@@ -413,13 +403,11 @@ class Dropbox(Operations):
 
   # Truncate a file to overwrite it.
   def truncate(self, path, length, fh=None):
-    path = path.encode('utf-8')
     if debug == True: appLog('debug', 'Called: truncate() - Path: ' + path + " Size: " + str(length))
     return 0
 
   # List the content of a directory.
   def readdir(self, path, fh):
-    path = path.encode('utf-8')
     if debug == True: appLog('debug', 'Called: readdir() - Path: ' + path)
 
     # Fetch folder informations.
@@ -438,7 +426,6 @@ class Dropbox(Operations):
 
   # Get properties for a directory or file.
   def getattr(self, path, fh=None):
-    path = path.encode('utf-8')
     if debug == True: appLog('debug', 'Called: getattr() - Path: ' + path)
 
     # Get userid and groupid for current user.
@@ -491,7 +478,6 @@ class Dropbox(Operations):
 
   # Flush filesystem cache. Always true in this case.
   def fsync(self, path, fdatasync, fh):
-    path = path.encode('utf-8')
     if debug == True: appLog('debug', 'Called: fsync() - Path: ' + path)
 
 ########################
@@ -502,6 +488,13 @@ class apiRequest():
     self.headers = None
     pass
 
+  def make_url(self, url, path = None):
+    if path is not None:
+        path = path.encode('utf8')
+        path = urllib.quote(path)
+        url = url + path
+    return url
+
   # Function to handle GET API request.
   def get(self, url, args=None, argheaders=None, retresp=False):
     user_agent = "apiRequest/tools.schmidt.ps"
@@ -509,6 +502,9 @@ class apiRequest():
 
     # Add arguments to request string.
     if args != None and len(args) > 0:
+      #convert args values to utf8
+      for k,v in args.iteritems():
+        args[k] = (u"%s" % v).encode('utf8')
       url = url + '?' + urllib.urlencode(args)
 
     # Add additionally given class headers.
@@ -520,9 +516,9 @@ class apiRequest():
       headers.update(argheaders)
 
     try:
+      if debug == True: appLog('debug', u'Called api url %s ' % url)
       req = urllib2.Request(url, None, headers)
       response = urllib2.urlopen(req)
-
       # If retresp is TRUE return the raw response object.
       if retresp == True:
         return response
@@ -538,6 +534,7 @@ class apiRequest():
       appLog('error', 'apiRequest failed. HTTPException: ' + str(e))
       raise Exception, 'apiRequest failed. HTTPException: ' + str(e)
     except Exception, e:
+      print url
       appLog('error', 'apiRequest failed. Unknown exception: ' + str(e))
       raise Exception, 'apiRequest failed. Unknown exception: ' + str(e)
 
@@ -547,6 +544,9 @@ class apiRequest():
     headers = {'User-Agent' : user_agent}
 
     if args != None:
+        #convert args values to utf8
+      for k,v in args.iteritems():
+        args[k] = (u"%s" % v).encode('utf8')
       args = urllib.urlencode(args)
 
     # Add additionally given class headers.
